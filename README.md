@@ -43,9 +43,8 @@ Setup will ask for your SSH server, pick an SSH key from `~/.ssh`, and install a
 ## How to use
 
 1. Take a screenshot with **Cmd+Shift+4** (saves to clipboard on macOS)
-2. Wait ~1 second for the daemon to sync it
-3. In Claude Code on your SSH session, paste (**Cmd+V** or your terminal paste shortcut) — the text reference goes in automatically
-4. Claude reads the file and sees the image
+2. Paste in Claude Code on your SSH session — the sync happens in the background and the text reference is ready almost instantly
+3. Claude reads the file and sees the image
 
 You can attach multiple images to one prompt: each screenshot gets a unique filename (`img1.png`, `img2.png`, …). Copy → paste → copy → paste to stack them up.
 
