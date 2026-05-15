@@ -1,0 +1,163 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+type Server struct {
+	Host     string `json:"host"`
+	User     string `json:"user"`
+	SSHKey   string `json:"ssh_key"`
+	SyncPath string `json:"sync_path"`
+}
+
+type Settings struct {
+	PollIntervalMs  int  `json:"poll_interval_ms"`
+	MaxFileSizeKB   int  `json:"max_file_size_kb"`
+	CompressAboveKB int  `json:"compress_above_kb"`
+	KeepLastNFiles  int  `json:"keep_last_n_files"`
+	Paused          bool `json:"paused"`
+}
+
+type Config struct {
+	Servers  []Server `json:"servers"`
+	Settings Settings `json:"settings"`
+}
+
+func DefaultConfig() *Config {
+	return &Config{
+		Servers: []Server{},
+		Settings: Settings{
+			PollIntervalMs:  300,
+			MaxFileSizeKB:   2048,
+			CompressAboveKB: 500,
+			KeepLastNFiles:  10,
+			Paused:          false,
+		},
+	}
+}
+
+func ConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "cpssh"), nil
+}
+
+func ConfigPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.json"), nil
+}
+
+func Load() (*Config, error) {
+	path, err := ConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("config not found — run: cpssh setup")
+		}
+		return nil, err
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	defaults := DefaultConfig().Settings
+	if cfg.Settings.PollIntervalMs <= 0 {
+		cfg.Settings.PollIntervalMs = defaults.PollIntervalMs
+	}
+	if cfg.Settings.MaxFileSizeKB <= 0 {
+		cfg.Settings.MaxFileSizeKB = defaults.MaxFileSizeKB
+	}
+	return &cfg, nil
+}
+
+func (c *Config) Save() error {
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	path := filepath.Join(dir, "config.json")
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) AddServer(s Server) {
+	c.Servers = append(c.Servers, s)
+}
+
+func (c *Config) RemoveServer(host string) bool {
+	for i, s := range c.Servers {
+		if s.Host == host {
+			c.Servers = append(c.Servers[:i], c.Servers[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func PIDPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "daemon.pid"), nil
+}
+
+func LogPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "daemon.log"), nil
+}
+
+func counterPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "counter"), nil
+}
+
+// NextImageName returns the next short image filename (img1.png, img2.png, ...)
+// and persists the counter so it survives daemon restarts.
+func NextImageName() string {
+	path, err := counterPath()
+	if err != nil {
+		return "img1.png"
+	}
+
+	var n int
+	data, err := os.ReadFile(path)
+	if err == nil {
+		fmt.Sscanf(string(data), "%d", &n)
+	}
+	n++
+
+	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d", n)), 0600)
+	return fmt.Sprintf("img%d.png", n)
+}

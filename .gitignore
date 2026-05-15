@@ -1,0 +1,21 @@
+# Build output
+cpssh
+cpssh_*
+
+# Go
+*.test
+*.out
+vendor/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Never commit these
+plan.md
+GITHUB_SETUP.md
