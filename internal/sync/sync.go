@@ -48,7 +48,7 @@ func SyncToAll(cfg *config.Config, imageData []byte) string {
 		wg.Add(1)
 		go func(s config.Server) {
 			defer wg.Done()
-			if err := syncToServer(s, data, filename); err != nil {
+			if err := syncToServer(s, data, filename, cfg.Settings.KeepLastNFiles); err != nil {
 				log.Printf("sync: [%s] error: %v", s.Host, err)
 			} else {
 				log.Printf("sync: [%s] ok → %s/%s", s.Host, s.SyncPath, filename)
@@ -101,13 +101,17 @@ func maybeCompress(cfg *config.Config, path string) string {
 // across calls so the 2nd+ syncs in a session are near-instant), and no host
 // key prompt on first connect.
 func sshArgs(s config.Server) []string {
-	return []string{
+	args := []string{
 		"-i", s.SSHKey,
 		"-o", "ControlMaster=auto",
 		"-o", fmt.Sprintf("ControlPath=%s/.ssh/cm_%%r@%%h:%%p", os.Getenv("HOME")),
 		"-o", "ControlPersist=10m",
 		"-o", "StrictHostKeyChecking=accept-new",
 	}
+	if s.Port != 0 {
+		args = append(args, "-p", fmt.Sprintf("%d", s.Port))
+	}
+	return args
 }
 
 // WarmUp pre-establishes the ControlMaster socket for all servers so the
@@ -126,10 +130,10 @@ func WarmUp(cfg *config.Config) {
 	}
 }
 
-func syncToServer(s config.Server, data []byte, filename string) error {
+func syncToServer(s config.Server, data []byte, filename string, keepN int) error {
 	remoteCmd := fmt.Sprintf(
-		`cat > "%s/%s" && cd "%s" && ln -sf "%s" latest.png && ls -t *.png 2>/dev/null | tail -n +11 | xargs rm -f`,
-		s.SyncPath, filename, s.SyncPath, filename,
+		`mkdir -p "%s" && cat > "%s/%s" && cd "%s" && ln -sf "%s" latest.png && ls -t *.png 2>/dev/null | tail -n +%d | xargs rm -f`,
+		s.SyncPath, s.SyncPath, filename, s.SyncPath, filename, keepN+1,
 	)
 	args := append(sshArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
 	run := func() error {

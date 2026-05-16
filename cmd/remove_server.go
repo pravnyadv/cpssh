@@ -26,7 +26,7 @@ var removeServerCmd = &cobra.Command{
 
 		fmt.Println("Configured servers:")
 		for i, s := range cfg.Servers {
-			fmt.Printf("  [%d] %s@%s (%s)\n", i+1, s.User, s.Host, s.SyncPath)
+			fmt.Printf("  [%d] %s (%s)\n", i+1, serverAddr(s), s.SyncPath)
 		}
 
 		reader := bufio.NewReader(os.Stdin)
@@ -46,7 +46,7 @@ var removeServerCmd = &cobra.Command{
 		if err := cfg.Save(); err != nil {
 			return err
 		}
-		fmt.Printf("Removed %s@%s\n", removed.User, removed.Host)
+		fmt.Printf("Removed %s\n", serverAddr(removed))
 		return nil
 	},
 }

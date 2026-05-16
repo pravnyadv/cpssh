@@ -41,7 +41,7 @@ var statusCmd = &cobra.Command{
 
 		fmt.Printf("\nServers (%d):\n", len(cfg.Servers))
 		for _, s := range cfg.Servers {
-			fmt.Printf("  %s@%s → %s\n", s.User, s.Host, s.SyncPath)
+			fmt.Printf("  %s → %s\n", serverAddr(s), s.SyncPath)
 		}
 
 		logPath, _ := config.LogPath()

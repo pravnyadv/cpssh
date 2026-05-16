@@ -9,6 +9,7 @@ import (
 
 type Server struct {
 	Host     string `json:"host"`
+	Port     int    `json:"port,omitempty"`
 	User     string `json:"user"`
 	SSHKey   string `json:"ssh_key"`
 	SyncPath string `json:"sync_path"`
@@ -80,6 +81,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Settings.MaxFileSizeKB <= 0 {
 		cfg.Settings.MaxFileSizeKB = defaults.MaxFileSizeKB
+	}
+	if cfg.Settings.KeepLastNFiles <= 0 {
+		cfg.Settings.KeepLastNFiles = defaults.KeepLastNFiles
 	}
 	return &cfg, nil
 }

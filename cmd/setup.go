@@ -38,20 +38,24 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		fmt.Printf("Testing SSH connection to %s@%s...\n", srv.User, srv.Host)
-		if err := server.TestConnection(srv); err != nil {
-			fmt.Fprintf(os.Stderr, "Connection failed: %v\n", err)
-			return err
-		}
-		fmt.Println("Connection successful.")
+		if containsServer(cfg.Servers, srv) {
+			fmt.Printf("%s is already configured, skipping.\n", serverAddr(srv))
+		} else {
+			fmt.Printf("Testing SSH connection to %s...\n", serverAddr(srv))
+			if err := server.TestConnection(srv); err != nil {
+				fmt.Fprintf(os.Stderr, "Connection failed: %v\n", err)
+				return err
+			}
+			fmt.Println("Connection successful.")
 
-		fmt.Println("Setting up remote server...")
-		if err := server.Setup(srv); err != nil {
-			return fmt.Errorf("remote setup: %w", err)
-		}
-		fmt.Println("Remote setup complete.")
+			fmt.Println("Setting up remote server...")
+			if err := server.Setup(srv); err != nil {
+				return fmt.Errorf("remote setup: %w", err)
+			}
+			fmt.Println("Remote setup complete.")
 
-		cfg.AddServer(srv)
+			cfg.AddServer(srv)
+		}
 
 		if !prompt("Add another server? [y/N]: ", false) {
 			break
@@ -61,6 +65,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	binaryPath, err := os.Executable()
 	if err != nil {
 		binaryPath = "/usr/local/bin/cpssh"
+	}
+
+	if !isStandardBinPath(binaryPath) {
+		fmt.Printf("Note: daemon will run from %s — if you move this binary, re-run cpssh setup.\n", binaryPath)
 	}
 
 	if !daemon.DaemonInstalled() {
@@ -98,6 +106,32 @@ func promptServer() (config.Server, error) {
 		user = os.Getenv("USER")
 	}
 
+	var port int
+	if hostPort := strings.SplitN(host, ":", 2); len(hostPort) == 2 {
+		host = hostPort[0]
+		fmt.Sscanf(hostPort[1], "%d", &port)
+	}
+
+	if host == "" {
+		return config.Server{}, fmt.Errorf("host cannot be empty")
+	}
+	if user == "" {
+		return config.Server{}, fmt.Errorf("user cannot be empty — use user@host format")
+	}
+
+	portDefault := 22
+	if port != 0 {
+		portDefault = port
+	}
+	fmt.Printf("Port [%d]: ", portDefault)
+	portInput, _ := reader.ReadString('\n')
+	portInput = strings.TrimSpace(portInput)
+	if portInput != "" {
+		fmt.Sscanf(portInput, "%d", &port)
+	} else {
+		port = portDefault
+	}
+
 	sshKey := pickSSHKey(reader)
 
 	fmt.Print("Remote sync path [$HOME/.cpssh]: ")
@@ -114,6 +148,7 @@ func promptServer() (config.Server, error) {
 
 	return config.Server{
 		Host:     host,
+		Port:     port,
 		User:     user,
 		SSHKey:   sshKey,
 		SyncPath: syncPath,
@@ -136,9 +171,7 @@ func pickSSHKey(reader *bufio.Reader) string {
 	}
 
 	if len(keys) == 0 {
-		fmt.Print("SSH key path: ")
-		path, _ := reader.ReadString('\n')
-		return strings.TrimSpace(path)
+		return readKeyPath(reader)
 	}
 
 	fmt.Println("Available SSH keys:")
@@ -154,9 +187,7 @@ func pickSSHKey(reader *bufio.Reader) string {
 		return keys[0]
 	}
 	if input == "0" {
-		fmt.Print("SSH key path: ")
-		path, _ := reader.ReadString('\n')
-		return strings.TrimSpace(path)
+		return readKeyPath(reader)
 	}
 
 	var idx int
@@ -176,6 +207,51 @@ func prompt(msg string, defaultYes bool) bool {
 		return defaultYes
 	}
 	return input == "y" || input == "yes"
+}
+
+func containsServer(servers []config.Server, s config.Server) bool {
+	for _, existing := range servers {
+		if existing.Host == s.Host && existing.Port == s.Port {
+			return true
+		}
+	}
+	return false
+}
+
+func isStandardBinPath(path string) bool {
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{
+		"/usr/local/bin", "/usr/bin", "/opt/homebrew/bin",
+		filepath.Join(home, "bin"), filepath.Join(home, ".local", "bin"),
+	} {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func serverAddr(s config.Server) string {
+	if s.Port != 0 && s.Port != 22 {
+		return fmt.Sprintf("%s@%s:%d", s.User, s.Host, s.Port)
+	}
+	return fmt.Sprintf("%s@%s", s.User, s.Host)
+}
+
+func readKeyPath(reader *bufio.Reader) string {
+	fmt.Print("SSH key path: ")
+	path, _ := reader.ReadString('\n')
+	path = strings.TrimSpace(path)
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[2:])
+	}
+	if info, err := os.Stat(path); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: key not found: %s\n", path)
+	} else if info.Mode().Perm()&0077 != 0 {
+		fmt.Fprintf(os.Stderr, "Warning: key permissions are too open — run: chmod 400 %s\n", path)
+	}
+	return path
 }
 
 func checkDeps() {

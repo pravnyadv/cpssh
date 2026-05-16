@@ -8,14 +8,22 @@ import (
 	"github.com/pravnyadv/cpssh/internal/config"
 )
 
+func baseArgs(s config.Server) []string {
+	args := []string{
+		"-i", s.SSHKey,
+		"-o", "ConnectTimeout=10",
+		"-o", "StrictHostKeyChecking=accept-new",
+	}
+	if s.Port != 0 {
+		args = append(args, "-p", fmt.Sprintf("%d", s.Port))
+	}
+	return args
+}
+
 // TestConnection verifies SSH access to the server.
 func TestConnection(s config.Server) error {
-	cmd := exec.Command("ssh", "-i", s.SSHKey,
-		"-o", "ConnectTimeout=10",
-		"-o", "BatchMode=yes",
-		fmt.Sprintf("%s@%s", s.User, s.Host),
-		"echo ok")
-	out, err := cmd.Output()
+	args := append(baseArgs(s), "-o", "BatchMode=yes", fmt.Sprintf("%s@%s", s.User, s.Host), "echo ok")
+	out, err := exec.Command("ssh", args...).Output()
 	if err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)
 	}
@@ -35,8 +43,6 @@ func Setup(s config.Server) error {
 }
 
 func runSSH(s config.Server, remoteCmd string) error {
-	cmd := exec.Command("ssh", "-i", s.SSHKey,
-		fmt.Sprintf("%s@%s", s.User, s.Host),
-		remoteCmd)
-	return cmd.Run()
+	args := append(baseArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
+	return exec.Command("ssh", args...).Run()
 }

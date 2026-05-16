@@ -22,7 +22,11 @@ var addServerCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Testing connection to %s@%s...\n", srv.User, srv.Host)
+		if containsServer(cfg.Servers, srv) {
+			return fmt.Errorf("%s is already configured", serverAddr(srv))
+		}
+
+		fmt.Printf("Testing connection to %s...\n", serverAddr(srv))
 		if err := server.TestConnection(srv); err != nil {
 			return err
 		}

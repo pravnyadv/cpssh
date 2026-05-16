@@ -41,14 +41,17 @@ var uninstallCmd = &cobra.Command{
 
 		if cleanServers {
 			for _, srv := range cfg.Servers {
-				fmt.Printf("Cleaning up %s@%s...\n", srv.User, srv.Host)
-				c := exec.Command("ssh",
+				fmt.Printf("Cleaning up %s...\n", serverAddr(srv))
+				sshArgs := []string{
 					"-i", srv.SSHKey,
 					"-o", "ConnectTimeout=10",
 					"-o", "StrictHostKeyChecking=accept-new",
-					fmt.Sprintf("%s@%s", srv.User, srv.Host),
-					fmt.Sprintf(`rm -rf "%s"`, srv.SyncPath),
-				)
+				}
+				if srv.Port != 0 {
+					sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", srv.Port))
+				}
+				sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", srv.User, srv.Host), fmt.Sprintf(`rm -rf "%s"`, srv.SyncPath))
+				c := exec.Command("ssh", sshArgs...)
 				if err := c.Run(); err != nil {
 					fmt.Fprintf(os.Stderr, "  Warning: could not remove %s:%s — %v\n", srv.Host, srv.SyncPath, err)
 				} else {

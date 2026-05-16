@@ -80,9 +80,10 @@ func InstallDaemon(binaryPath string) error {
 		return err
 	}
 
-	_ = exec.Command("launchctl", "unload", path).Run()
-	if out, err := exec.Command("launchctl", "load", path).CombinedOutput(); err != nil {
-		return fmt.Errorf("launchctl load: %s: %w", strings.TrimSpace(string(out)), err)
+	target := launchTarget()
+	_ = exec.Command("launchctl", "bootout", target, path).Run()
+	if out, err := exec.Command("launchctl", "bootstrap", target, path).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl bootstrap: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
@@ -92,8 +93,12 @@ func UninstallDaemon() error {
 	if err != nil {
 		return err
 	}
-	_ = exec.Command("launchctl", "unload", path).Run()
+	_ = exec.Command("launchctl", "bootout", launchTarget(), path).Run()
 	return os.Remove(path)
+}
+
+func launchTarget() string {
+	return fmt.Sprintf("gui/%d", os.Getuid())
 }
 
 func DaemonInstalled() bool {
