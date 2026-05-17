@@ -3,7 +3,16 @@ set -e
 
 REPO="pravnyadv/cpssh"
 BIN="cpssh"
-INSTALL_DIR="/usr/local/bin"
+
+# Pick a user-writable bin dir so sudo is never needed.
+# Preference: Homebrew bin (Apple Silicon) → ~/.local/bin → /usr/local/bin
+if [ -d "/opt/homebrew/bin" ]; then
+  INSTALL_DIR="/opt/homebrew/bin"
+elif [ -d "$HOME/.local/bin" ]; then
+  INSTALL_DIR="$HOME/.local/bin"
+else
+  INSTALL_DIR="/usr/local/bin"
+fi
 
 # Detect OS and arch
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -47,11 +56,7 @@ if [ ! -f "$TMP/$BIN" ]; then
   exit 1
 fi
 
-if [ -w "$INSTALL_DIR" ]; then
-  install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
-else
-  sudo install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
-fi
+install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
 
 echo ""
 echo "$BIN installed. Run: $BIN setup"
