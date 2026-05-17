@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/pravnyadv/cpssh/internal/config"
 	"github.com/spf13/cobra"
@@ -30,15 +29,7 @@ var removeServerCmd = &cobra.Command{
 		}
 
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Remove server number: ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		var idx int
-		fmt.Sscanf(input, "%d", &idx)
-		if idx < 1 || idx > len(cfg.Servers) {
-			return fmt.Errorf("invalid selection")
-		}
+		idx := promptInt(reader, "Remove server number: ", 1, len(cfg.Servers), nil)
 
 		removed := cfg.Servers[idx-1]
 		cfg.Servers = append(cfg.Servers[:idx-1], cfg.Servers[idx:]...)

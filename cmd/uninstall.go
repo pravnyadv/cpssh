@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/pravnyadv/cpssh/internal/config"
 	"github.com/pravnyadv/cpssh/internal/daemon"
+	"github.com/pravnyadv/cpssh/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -42,22 +45,21 @@ var uninstallCmd = &cobra.Command{
 		if cleanServers {
 			for _, srv := range cfg.Servers {
 				fmt.Printf("Cleaning up %s...\n", serverAddr(srv))
-				sshArgs := []string{
-					"-i", srv.SSHKey,
-					"-o", "ConnectTimeout=10",
-					"-o", "StrictHostKeyChecking=accept-new",
-				}
-				if srv.Port != 0 {
-					sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", srv.Port))
-				}
-				sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", srv.User, srv.Host), fmt.Sprintf(`rm -rf "%s"`, srv.SyncPath))
-				c := exec.Command("ssh", sshArgs...)
-				if err := c.Run(); err != nil {
+				sshArgs := append(server.BaseArgs(srv),
+					fmt.Sprintf("%s@%s", srv.User, srv.Host),
+					fmt.Sprintf("rm -rf %s", shellSingleQuote(srv.SyncPath)),
+				)
+				if err := exec.Command("ssh", sshArgs...).Run(); err != nil {
 					fmt.Fprintf(os.Stderr, "  Warning: could not remove %s:%s — %v\n", srv.Host, srv.SyncPath, err)
 				} else {
 					fmt.Printf("  Removed %s:%s\n", srv.Host, srv.SyncPath)
 				}
 			}
+		}
+
+		// Remove log directory (lives outside the config dir on macOS).
+		if logPath, err := config.LogPath(); err == nil {
+			os.RemoveAll(filepath.Dir(logPath))
 		}
 
 		binaryPath, err := os.Executable()
@@ -68,4 +70,11 @@ var uninstallCmd = &cobra.Command{
 		fmt.Println("cpssh uninstalled.")
 		return nil
 	},
+}
+
+// shellSingleQuote wraps s in single quotes for safe inclusion in a remote
+// shell command. Single quotes don't expand anything; an embedded ' is escaped
+// by closing the quote, inserting a literal ', and reopening.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/pravnyadv/cpssh/internal/config"
@@ -24,7 +25,9 @@ var restartCmd = &cobra.Command{
 				fmt.Println("Resumed.")
 			}
 			proc, _ := os.FindProcess(pid)
-			if err := proc.Kill(); err != nil {
+			// SIGTERM lets the daemon clean up its PID file before launchd
+			// (KeepAlive) or systemd (Restart=always) brings it back.
+			if err := proc.Signal(syscall.SIGTERM); err != nil {
 				return fmt.Errorf("could not stop daemon: %w", err)
 			}
 			fmt.Printf("Daemon stopped (pid %d). Waiting for restart", pid)

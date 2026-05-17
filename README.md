@@ -4,16 +4,17 @@ Copy a screenshot on your Mac. Paste it in Claude Code on your SSH server.
 
 ---
 
-Claude Code running over SSH can't read your local clipboard. `cpssh` bridges the gap: it watches your Mac's clipboard for images, syncs them to your server over SSH, and puts a text reference in your clipboard so you can paste it straight into Claude Code.
+Claude Code running over SSH can't read your local clipboard. `cpssh` bridges the gap: it watches your Mac's clipboard for images, syncs them to your server over SSH, and adds a text reference alongside the image — terminal paste gives the path, image apps still get the original PNG.
 
 ```
 [you copy a screenshot]
      ↓
-cpssh syncs it → dev@myserver:~/.cpssh/img42.png
+cpssh syncs it → dev@myserver:~/.cpssh/img5.png
      ↓
-clipboard now contains: [image:$HOME/.cpssh/img42.png]
+clipboard now contains: original PNG + [~/.cpssh/img5.png]
      ↓
-paste in Claude Code on SSH → Claude reads the file automatically
+paste in Claude Code on SSH → terminal gets the path → Claude reads the file
+paste in Slack/Preview        → still gets the original image
 ```
 
 ## Requirements
@@ -21,8 +22,9 @@ paste in Claude Code on SSH → Claude reads the file automatically
 - macOS as your local machine (where you take screenshots)
 - An SSH server reachable with a key (password auth not supported)
 - [Claude Code](https://claude.ai/code) on the server
+- `pngpaste` — `brew install pngpaste`
 
-> **Linux local machine:** The daemon runs on Linux but on Linux it only puts the text reference in your clipboard — the original PNG is not preserved simultaneously. Full dual-clipboard support for Linux is planned for a future release.
+> **Linux local machine:** The daemon runs on Linux but only the text reference is written to the clipboard (the original image is replaced). macOS gets dual-type clipboard via NSPasteboard.
 
 ## Install
 
@@ -46,9 +48,9 @@ Setup will ask for your SSH server, pick an SSH key from `~/.ssh`, and install a
 2. Paste in Claude Code on your SSH session — the sync happens in the background and the text reference is ready almost instantly
 3. Claude reads the file and sees the image
 
-You can attach multiple images to one prompt: each screenshot gets a unique filename (`img1.png`, `img2.png`, …). Copy → paste → copy → paste to stack them up.
+You can attach multiple images to one prompt: filenames cycle through `img1.png`–`img10.png`. Copy → paste → copy → paste to stack them up.
 
-The original PNG stays in your clipboard too, so pasting into Discord, Slack, or any image app still works normally.
+The original PNG stays in your clipboard alongside the text reference, so pasting into Discord, Slack, Preview, or any image app still works normally.
 
 ## Commands
 
@@ -66,11 +68,11 @@ cpssh uninstall      Remove daemon and config
 
 ## How it works
 
-- A background daemon polls the clipboard every 300ms using the native macOS/Linux clipboard API
-- On a new image, it generates a short filename (`imgN.png`) and pipes the raw bytes to the server over a single SSH call (no rsync, no scp — just `cat > file` via stdin)
+- A background daemon polls the clipboard every 300ms using `pngpaste`
+- On a new image, it generates a cycling filename (`img1.png`–`img10.png`) and pipes the raw bytes to the server over a single SSH call (no rsync, no scp — just `cat > file` via stdin)
 - SSH ControlMaster reuses connections — first sync after daemon start costs ~1s for the handshake; subsequent syncs are near-instant
-- After a successful sync, the daemon writes both the original PNG **and** a text reference `[image:$HOME/.cpssh/imgN.png]` to the clipboard simultaneously using NSPasteboard — terminal paste gets the text, image apps get the PNG
-- The 10 most recent images are kept on the server; older ones are purged automatically on each sync
+- After a successful sync, the daemon writes both the original PNG **and** the text reference `[~/.cpssh/imgN.png]` to the clipboard simultaneously via NSPasteboard — terminal paste gets the text, image apps get the PNG
+- Up to 10 images are kept on the server (filenames cycle through `img1.png`–`img10.png`)
 - Images larger than 500 KB are resampled before upload using `sips` (ships with macOS), keeping transfer fast
 
 ## Configuration
@@ -99,7 +101,7 @@ Config lives at `~/.config/cpssh/config.json`. You can edit it directly:
 
 ## Build from source
 
-Requires Go and Xcode Command Line Tools on macOS (needed for the CGO clipboard write).
+Requires Go 1.21+ and Xcode Command Line Tools on macOS (CGo uses the Cocoa framework for the clipboard write).
 
 ```bash
 git clone https://github.com/pravnyadv/cpssh
@@ -107,7 +109,7 @@ cd cpssh
 SDKROOT=$(xcrun --sdk macosx --show-sdk-path) go build -o cpssh .
 ```
 
-Note: `go install` will not work on macOS because CGO requires the SDK path to be set explicitly. Use the install script for a regular install, or the build command above when developing.
+`go install` won't work on macOS because CGo needs the SDK path. Use the install script for a regular install, or the build command above when developing.
 
 ## License
 

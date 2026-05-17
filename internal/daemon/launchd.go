@@ -11,6 +11,9 @@ import (
 	"text/template"
 )
 
+// StandardOutPath/StandardErrorPath are intentionally omitted — the daemon
+// opens the log file directly in Go (see daemon.Run). Letting launchd also
+// write to it would interleave Go log lines with raw panic output.
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -22,23 +25,23 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
         <string>{{.BinaryPath}}</string>
         <string>daemon</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>LSUIElement</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>{{.LogPath}}</string>
-    <key>StandardErrorPath</key>
-    <string>{{.LogPath}}</string>
 </dict>
 </plist>
 `
 
 type plistVars struct {
 	BinaryPath string
-	LogPath    string
 }
 
 func plistPath() (string, error) {
@@ -50,12 +53,6 @@ func plistPath() (string, error) {
 }
 
 func InstallDaemon(binaryPath string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	logPath := filepath.Join(home, ".config", "cpssh", "daemon.log")
-
 	path, err := plistPath()
 	if err != nil {
 		return err
@@ -76,7 +73,7 @@ func InstallDaemon(binaryPath string) error {
 	}
 	defer f.Close()
 
-	if err := tmpl.Execute(f, plistVars{BinaryPath: binaryPath, LogPath: logPath}); err != nil {
+	if err := tmpl.Execute(f, plistVars{BinaryPath: binaryPath}); err != nil {
 		return err
 	}
 

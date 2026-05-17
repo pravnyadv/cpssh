@@ -8,9 +8,16 @@ import (
 	"github.com/pravnyadv/cpssh/internal/config"
 )
 
-func baseArgs(s config.Server) []string {
+// BaseArgs returns SSH flags for short-lived, non-pooled one-shot commands
+// (setup checks, uninstall cleanup). Sync uses its own builder with
+// ControlMaster for connection reuse.
+//
+// BatchMode=yes makes ssh fail fast if the key needs interactive input rather
+// than hanging on a passphrase prompt.
+func BaseArgs(s config.Server) []string {
 	args := []string{
 		"-i", s.SSHKey,
+		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",
 	}
@@ -22,7 +29,7 @@ func baseArgs(s config.Server) []string {
 
 // TestConnection verifies SSH access to the server.
 func TestConnection(s config.Server) error {
-	args := append(baseArgs(s), "-o", "BatchMode=yes", fmt.Sprintf("%s@%s", s.User, s.Host), "echo ok")
+	args := append(BaseArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), "echo ok")
 	out, err := exec.Command("ssh", args...).Output()
 	if err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)
@@ -43,6 +50,6 @@ func Setup(s config.Server) error {
 }
 
 func runSSH(s config.Server, remoteCmd string) error {
-	args := append(baseArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
+	args := append(BaseArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
 	return exec.Command("ssh", args...).Run()
 }

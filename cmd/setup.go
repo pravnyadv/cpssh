@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/pravnyadv/cpssh/internal/config"
@@ -72,17 +73,21 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Note: daemon will run from %s — if you move this binary, re-run cpssh setup.\n", binaryPath)
 	}
 
-	if !daemon.DaemonInstalled() {
-		fmt.Println("Installing daemon...")
-		if err := daemon.InstallDaemon(binaryPath); err != nil {
-			return fmt.Errorf("install daemon: %w", err)
-		}
-		fmt.Println("Daemon installed and started.")
-	}
-
+	// Save config before installing the daemon — daemon.InstallDaemon starts
+	// the service immediately, and the daemon's first action is config.Load.
+	// Reversing this order would crash-loop the daemon under launchd KeepAlive
+	// until the file appears on disk.
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
+
+	// Always (re)install the daemon so the plist/unit picks up changes to the
+	// binary path on reinstalls. InstallDaemon is idempotent (bootout+bootstrap).
+	fmt.Println("Installing daemon...")
+	if err := daemon.InstallDaemon(binaryPath); err != nil {
+		return fmt.Errorf("install daemon: %w", err)
+	}
+	fmt.Println("Daemon installed and started.")
 
 	fmt.Println("\ncpssh is running. Copy an image and it will sync to your server(s) automatically.")
 	return nil
@@ -94,66 +99,103 @@ func promptServer() (config.Server, error) {
 	fmt.Print("SSH server (user@host): ")
 	raw, _ := reader.ReadString('\n')
 	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return config.Server{}, fmt.Errorf("server cannot be empty")
-	}
 
-	parts := strings.SplitN(raw, "@", 2)
-	var user, host string
-	if len(parts) == 2 {
-		user, host = parts[0], parts[1]
-	} else {
-		host = parts[0]
-		user = os.Getenv("USER")
-	}
-
-	var port int
-	if hostPort := strings.SplitN(host, ":", 2); len(hostPort) == 2 {
-		host = hostPort[0]
-		fmt.Sscanf(hostPort[1], "%d", &port)
-	}
-
-	if host == "" {
-		return config.Server{}, fmt.Errorf("host cannot be empty")
-	}
-	if user == "" {
-		return config.Server{}, fmt.Errorf("user cannot be empty — use user@host format")
+	user, host, port, err := parseServerAddress(raw, os.Getenv("USER"))
+	if err != nil {
+		return config.Server{}, err
 	}
 
 	portDefault := 22
 	if port != 0 {
 		portDefault = port
 	}
-	fmt.Printf("Port [%d]: ", portDefault)
-	portInput, _ := reader.ReadString('\n')
-	portInput = strings.TrimSpace(portInput)
-	if portInput != "" {
-		fmt.Sscanf(portInput, "%d", &port)
-	} else {
-		port = portDefault
-	}
+	portFinal := promptInt(reader, fmt.Sprintf("Port [%d]: ", portDefault), 1, 65535, &portDefault)
 
 	sshKey := pickSSHKey(reader)
 
 	fmt.Print("Remote sync path [$HOME/.cpssh]: ")
 	syncPath, _ := reader.ReadString('\n')
-	syncPath = strings.TrimSpace(syncPath)
-	if syncPath == "" {
-		syncPath = "$HOME/.cpssh"
-	}
-	if strings.HasPrefix(syncPath, "~/") {
-		syncPath = "$HOME/" + syncPath[2:]
-	} else if syncPath == "~" {
-		syncPath = "$HOME"
-	}
+	syncPath = normalizeSyncPath(strings.TrimSpace(syncPath))
 
 	return config.Server{
 		Host:     host,
-		Port:     port,
+		Port:     portFinal,
 		User:     user,
 		SSHKey:   sshKey,
 		SyncPath: syncPath,
 	}, nil
+}
+
+// parseServerAddress splits a "user@host:port" string. If user is absent it
+// falls back to defaultUser. Port is optional; 0 means "let caller pick".
+//
+// IPv6 literals are not supported — they'd need bracket syntax both here and
+// in the SSH addr formatter; out of scope for the current use case.
+func parseServerAddress(raw, defaultUser string) (user, host string, port int, err error) {
+	if raw == "" {
+		return "", "", 0, fmt.Errorf("server cannot be empty")
+	}
+
+	if idx := strings.Index(raw, "@"); idx >= 0 {
+		user, host = raw[:idx], raw[idx+1:]
+	} else {
+		host = raw
+		user = defaultUser
+	}
+
+	if idx := strings.Index(host, ":"); idx >= 0 {
+		portStr := host[idx+1:]
+		host = host[:idx]
+		p, perr := strconv.Atoi(portStr)
+		if perr != nil || !isValidPort(p) {
+			return "", "", 0, fmt.Errorf("invalid port in address: %q", portStr)
+		}
+		port = p
+	}
+
+	if host == "" {
+		return "", "", 0, fmt.Errorf("host cannot be empty")
+	}
+	if user == "" {
+		return "", "", 0, fmt.Errorf("user cannot be empty — use user@host format")
+	}
+	return user, host, port, nil
+}
+
+func isValidPort(p int) bool { return p >= 1 && p <= 65535 }
+
+// promptInt repeats msg until the user enters an integer in [min, max].
+// If defaultVal is non-nil, empty input returns *defaultVal.
+func promptInt(reader *bufio.Reader, msg string, min, max int, defaultVal *int) int {
+	for {
+		fmt.Print(msg)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input == "" && defaultVal != nil {
+			return *defaultVal
+		}
+		n, err := strconv.Atoi(input)
+		if err != nil || n < min || n > max {
+			fmt.Printf("Please enter a number between %d and %d.\n", min, max)
+			continue
+		}
+		return n
+	}
+}
+
+// normalizeSyncPath turns user-friendly forms (empty, ~, ~/foo) into the
+// $HOME-prefixed shell form that the remote command expects.
+func normalizeSyncPath(s string) string {
+	if s == "" {
+		return "$HOME/.cpssh"
+	}
+	if s == "~" {
+		return "$HOME"
+	}
+	if strings.HasPrefix(s, "~/") {
+		return "$HOME/" + s[2:]
+	}
+	return s
 }
 
 func pickSSHKey(reader *bufio.Reader) string {
@@ -180,23 +222,29 @@ func pickSSHKey(reader *bufio.Reader) string {
 		fmt.Printf("  [%d] %s\n", i+1, k)
 	}
 	fmt.Printf("  [0] Enter path manually\n")
-	fmt.Print("Pick a key [1]: ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
 
-	if input == "" {
-		return keys[0]
-	}
-	if input == "0" {
-		return readKeyPath(reader)
-	}
+	for {
+		fmt.Print("Pick a key [1]: ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
 
-	var idx int
-	fmt.Sscanf(input, "%d", &idx)
-	if idx >= 1 && idx <= len(keys) {
-		return keys[idx-1]
+		if input == "" {
+			return keys[0]
+		}
+
+		var idx int
+		if _, err := fmt.Sscan(input, &idx); err != nil || fmt.Sprintf("%d", idx) != input {
+			fmt.Println("Please enter a number.")
+			continue
+		}
+		if idx == 0 {
+			return readKeyPath(reader)
+		}
+		if idx >= 1 && idx <= len(keys) {
+			return keys[idx-1]
+		}
+		fmt.Printf("Please enter a number between 0 and %d.\n", len(keys))
 	}
-	return keys[0]
 }
 
 func prompt(msg string, defaultYes bool) bool {

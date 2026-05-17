@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 type Server struct {
@@ -113,16 +114,6 @@ func (c *Config) AddServer(s Server) {
 	c.Servers = append(c.Servers, s)
 }
 
-func (c *Config) RemoveServer(host string) bool {
-	for i, s := range c.Servers {
-		if s.Host == host {
-			c.Servers = append(c.Servers[:i], c.Servers[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
 func PIDPath() (string, error) {
 	dir, err := ConfigDir()
 	if err != nil {
@@ -131,12 +122,38 @@ func PIDPath() (string, error) {
 	return filepath.Join(dir, "daemon.pid"), nil
 }
 
+// LogPath returns the log file path. It does NOT create the parent directory —
+// callers that need to write to the file should call EnsureLogDir first.
+// Keeping LogPath side-effect-free lets uninstall query it after removing the
+// config dir without accidentally re-creating anything.
 func LogPath() (string, error) {
-	dir, err := ConfigDir()
+	dir, err := logDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "daemon.log"), nil
+	return filepath.Join(dir, "cpssh.log"), nil
+}
+
+// EnsureLogDir creates the log file's parent directory if missing.
+func EnsureLogDir() error {
+	dir, err := logDir()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0700)
+}
+
+func logDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	// macOS: ~/Library/Logs/cpssh/ (standard, visible in Console.app)
+	// Linux: ~/.config/cpssh/ (XDG)
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Logs", "cpssh"), nil
+	}
+	return filepath.Join(home, ".config", "cpssh"), nil
 }
 
 func counterPath() (string, error) {
