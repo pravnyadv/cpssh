@@ -3,7 +3,19 @@ set -e
 
 REPO="pravnyadv/cpssh"
 BIN="cpssh"
-INSTALL_DIR="/usr/local/bin"
+
+# Pick a user-writable bin dir — no sudo needed.
+# /opt/homebrew/bin  → Apple Silicon Macs (Homebrew default)
+# /usr/local/bin     → Intel Macs with Homebrew (Homebrew makes it user-writable)
+# ~/.local/bin       → fallback (Linux, or macOS without Homebrew)
+if [ -d "/opt/homebrew/bin" ]; then
+  INSTALL_DIR="/opt/homebrew/bin"
+elif [ -w "/usr/local/bin" ]; then
+  INSTALL_DIR="/usr/local/bin"
+else
+  INSTALL_DIR="$HOME/.local/bin"
+  mkdir -p "$INSTALL_DIR"
+fi
 
 # Detect OS and arch
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -47,11 +59,15 @@ if [ ! -f "$TMP/$BIN" ]; then
   exit 1
 fi
 
-if [ -w "$INSTALL_DIR" ]; then
-  install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
-else
-  sudo install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
-fi
+install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
 
 echo ""
-echo "$BIN installed. Run: $BIN setup"
+echo "$BIN installed to $INSTALL_DIR/$BIN"
+
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) echo "Note: $INSTALL_DIR is not in your PATH. Add this to your shell config:" \
+     && echo "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+esac
+
+echo "Run: $BIN setup"
