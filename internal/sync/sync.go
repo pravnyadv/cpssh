@@ -23,21 +23,7 @@ func SyncToAll(cfg *config.Config, imageData []byte) string {
 	defer mu.Unlock()
 
 	filename := config.NextImageName()
-
-	localFile, err := saveTempFile(imageData)
-	if err != nil {
-		log.Printf("sync: failed to save temp file: %v", err)
-		return ""
-	}
-
-	localFile = maybeCompress(cfg, localFile)
-	defer os.Remove(localFile)
-
-	data, err := os.ReadFile(localFile)
-	if err != nil {
-		log.Printf("sync: failed to read temp file: %v", err)
-		return ""
-	}
+	data := maybeCompressBytes(cfg, imageData)
 
 	var (
 		wg         sync.WaitGroup
@@ -60,51 +46,60 @@ func SyncToAll(cfg *config.Config, imageData []byte) string {
 	return remotePath
 }
 
-func saveTempFile(data []byte) (string, error) {
-	f, err := os.CreateTemp("", "cpssh-*.png")
-	if err != nil {
-		return "", err
-	}
-	_, werr := f.Write(data)
-	f.Close()
-	if werr != nil {
-		os.Remove(f.Name())
-		return "", werr
-	}
-	return f.Name(), nil
-}
-
-func maybeCompress(cfg *config.Config, path string) string {
-	info, err := os.Stat(path)
-	if err != nil {
-		return path
-	}
-	if info.Size() <= int64(cfg.Settings.CompressAboveKB)*1024 {
-		return path
+// maybeCompressBytes returns imageData unchanged when below the threshold —
+// the common case for screenshots — avoiding a write/read round-trip through
+// the filesystem. When compression IS needed, sips/convert require file inputs,
+// so we round-trip then.
+func maybeCompressBytes(cfg *config.Config, imageData []byte) []byte {
+	if int64(len(imageData)) <= int64(cfg.Settings.CompressAboveKB)*1024 {
+		return imageData
 	}
 
-	out := path[:len(path)-4] + "_compressed.png"
+	in, err := os.CreateTemp("", "cpssh-in-*.png")
+	if err != nil {
+		return imageData
+	}
+	inPath := in.Name()
+	defer os.Remove(inPath)
+	if _, err := in.Write(imageData); err != nil {
+		in.Close()
+		return imageData
+	}
+	in.Close()
+
+	outPath := inPath[:len(inPath)-4] + "_c.png"
+	defer os.Remove(outPath)
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "darwin" {
-		cmd = exec.Command("sips", "-s", "format", "png", "--resampleHeightWidthMax", "2000", path, "--out", out)
+		cmd = exec.Command("sips", "-s", "format", "png", "--resampleHeightWidthMax", "2000", inPath, "--out", outPath)
 	} else {
-		cmd = exec.Command("convert", path, "-resize", "2000x2000>", out)
+		cmd = exec.Command("convert", inPath, "-resize", "2000x2000>", outPath)
 	}
 	if err := cmd.Run(); err != nil {
-		return path
+		return imageData
 	}
-	os.Remove(path)
-	return out
+	compressed, err := os.ReadFile(outPath)
+	if err != nil {
+		return imageData
+	}
+	return compressed
 }
 
 // sshArgs returns common SSH flags: identity, ControlMaster (reuses connections
-// across calls so the 2nd+ syncs in a session are near-instant), and no host
+// across calls so the 2nd+ syncs in a session are near-instant), BatchMode so a
+// missing key fails fast instead of hanging on a passphrase prompt, and no host
 // key prompt on first connect.
 func sshArgs(s config.Server) []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		home = os.Getenv("HOME")
+	}
 	args := []string{
 		"-i", s.SSHKey,
+		"-o", "BatchMode=yes",
 		"-o", "ControlMaster=auto",
-		"-o", fmt.Sprintf("ControlPath=%s/.ssh/cm_%%r@%%h:%%p", os.Getenv("HOME")),
+		"-o", fmt.Sprintf("ControlPath=%s/.ssh/cm_%%r@%%h:%%p", home),
 		"-o", "ControlPersist=10m",
 		"-o", "StrictHostKeyChecking=accept-new",
 	}
@@ -131,10 +126,7 @@ func WarmUp(cfg *config.Config) {
 }
 
 func syncToServer(s config.Server, data []byte, filename string, keepN int) error {
-	remoteCmd := fmt.Sprintf(
-		`mkdir -p "%s" && cat > "%s/%s" && cd "%s" && ln -sf "%s" latest.png && ls -t *.png 2>/dev/null | tail -n +%d | xargs rm -f`,
-		s.SyncPath, s.SyncPath, filename, s.SyncPath, filename, keepN+1,
-	)
+	remoteCmd := buildRemoteCmd(s.SyncPath, filename, keepN)
 	args := append(sshArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
 	run := func() error {
 		cmd := exec.Command("ssh", args...)
@@ -146,4 +138,19 @@ func syncToServer(s config.Server, data []byte, filename string, keepN int) erro
 		return run()
 	}
 	return nil
+}
+
+// buildRemoteCmd assembles the SSH-side shell command that writes the new
+// image, repoints the latest.png symlink, and prunes old files.
+//
+// `xargs -r` is GNU's "skip when input is empty" flag; FreeBSD/macOS xargs
+// accept it as a documented no-op (it never invokes the utility on empty input
+// anyway). Without -r, GNU xargs would run `rm -f` with no operands, which
+// errors out and makes the whole && chain fail — silently breaking the
+// clipboard text reference on every fresh Linux server.
+func buildRemoteCmd(syncPath, filename string, keepN int) string {
+	return fmt.Sprintf(
+		`mkdir -p "%s" && cat > "%s/%s" && cd "%s" && ln -sf "%s" latest.png && ls -t *.png 2>/dev/null | tail -n +%d | xargs -r rm -f`,
+		syncPath, syncPath, filename, syncPath, filename, keepN+1,
+	)
 }

@@ -7,20 +7,48 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 )
 
-type systemClipboard struct{}
+type systemClipboard struct {
+	mu       sync.Mutex
+	lastHash [32]byte
+}
 
 func New() Clipboard {
 	return &systemClipboard{}
 }
 
+// WriteImageAndText writes the text reference to the clipboard. On Linux the
+// image is not preserved alongside the text — xclip/wl-copy don't support
+// setting multiple types in one call the way NSPasteboard does.
+//
+// Resets the dedup hash so a subsequent re-copy of the same image will be
+// re-emitted instead of silently swallowed.
+func (s *systemClipboard) WriteImageAndText(_ []byte, text string) {
+	var cmd *exec.Cmd
+	if isWayland() {
+		cmd = exec.Command("wl-copy")
+	} else {
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	}
+	cmd.Stdin = strings.NewReader(text)
+	if err := cmd.Run(); err != nil {
+		log.Printf("clipboard: write failed: %v", err)
+	}
+	s.mu.Lock()
+	s.lastHash = [32]byte{}
+	s.mu.Unlock()
+}
+
+func isWayland() bool { return os.Getenv("WAYLAND_DISPLAY") != "" }
+
 func (s *systemClipboard) WatchForImage(interval time.Duration) <-chan []byte {
 	ch := make(chan []byte, 1)
 	go func() {
 		log.Printf("clipboard watching for images...")
-		var lastHash [32]byte
 		for {
 			time.Sleep(interval)
 			data := readClipboardImage()
@@ -28,10 +56,13 @@ func (s *systemClipboard) WatchForImage(interval time.Duration) <-chan []byte {
 				continue
 			}
 			h := sha256.Sum256(data)
-			if h == lastHash {
+			s.mu.Lock()
+			if h == s.lastHash {
+				s.mu.Unlock()
 				continue
 			}
-			lastHash = h
+			s.lastHash = h
+			s.mu.Unlock()
 			log.Printf("clipboard: image detected (%d KB)", len(data)/1024)
 			ch <- data
 		}
@@ -40,7 +71,7 @@ func (s *systemClipboard) WatchForImage(interval time.Duration) <-chan []byte {
 }
 
 func readClipboardImage() []byte {
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
+	if isWayland() {
 		data, _ := exec.Command("wl-paste", "--type", "image/png").Output()
 		return data
 	}

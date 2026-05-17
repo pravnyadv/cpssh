@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,9 @@ func Run() error {
 	}
 	defer removePID()
 
+	if err := config.EnsureLogDir(); err != nil {
+		return fmt.Errorf("create log dir: %w", err)
+	}
 	logPath, _ := config.LogPath()
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
@@ -71,7 +75,11 @@ func Run() error {
 				continue
 			}
 			log.Printf("image captured (%d KB), syncing to %d server(s)", len(data)/1024, len(cfg.Servers))
-			cpssync.SyncToAll(cfg, data)
+			if remotePath := cpssync.SyncToAll(cfg, data); remotePath != "" {
+				display := "[" + strings.ReplaceAll(remotePath, "$HOME/", "~/") + "]"
+				cb.WriteImageAndText(data, display)
+				log.Printf("clipboard: wrote image + %s", display)
+			}
 		}
 	}
 }

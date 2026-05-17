@@ -3,12 +3,24 @@ version: 2
 project_name: cpssh
 
 builds:
-  - main: .
+  - id: darwin
+    main: .
+    binary: cpssh
+    env:
+      - CGO_ENABLED=1
+      - 'CC=clang -arch {{ if eq .Arch "arm64" }}arm64{{ else }}x86_64{{ end }}'
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+  - id: linux
+    main: .
     binary: cpssh
     env:
       - CGO_ENABLED=0
     goos:
-      - darwin
       - linux
     goarch:
       - amd64
