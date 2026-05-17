@@ -26,7 +26,9 @@ fi
 
 # Fetch latest release version from GitHub
 VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+  | grep '"tag_name"' \
+  | sed -E 's/.*"v?([^"]+)".*/\1/' \
+  || true)
 
 if [ -z "$VERSION" ]; then
   echo "Could not determine latest version. Check https://github.com/$REPO/releases" >&2
