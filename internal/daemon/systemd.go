@@ -48,6 +48,13 @@ func InstallDaemon(binaryPath string) error {
 	return nil
 }
 
+func StartDaemon() error {
+	if out, err := exec.Command("systemctl", "--user", "start", "cpssh").CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl start: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func UninstallDaemon() error {
 	_ = exec.Command("systemctl", "--user", "disable", "--now", "cpssh").Run()
 	path, err := unitPath()

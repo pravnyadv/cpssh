@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pravnyadv/cpssh/internal/config"
@@ -66,7 +67,7 @@ func readPID(path string) (int, bool) {
 	if err != nil {
 		return 0, false
 	}
-	if err := proc.Signal(os.Signal(nil)); err != nil {
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
 		return 0, false
 	}
 	return pid, true

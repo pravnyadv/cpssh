@@ -88,6 +88,19 @@ func InstallDaemon(binaryPath string) error {
 	return nil
 }
 
+func StartDaemon() error {
+	path, err := plistPath()
+	if err != nil {
+		return err
+	}
+	target := launchTarget()
+	_ = exec.Command("launchctl", "bootout", target, path).Run()
+	if out, err := exec.Command("launchctl", "bootstrap", target, path).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl bootstrap: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func UninstallDaemon() error {
 	path, err := plistPath()
 	if err != nil {
