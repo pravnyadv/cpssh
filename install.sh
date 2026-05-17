@@ -1,46 +1,57 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 REPO="pravnyadv/cpssh"
+BIN="cpssh"
 INSTALL_DIR="/usr/local/bin"
-VERSION="${1:-latest}"
 
+# Detect OS and arch
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
-case $ARCH in
-  x86_64) ARCH="amd64" ;;
+case "$ARCH" in
+  x86_64)        ARCH="amd64" ;;
   arm64|aarch64) ARCH="arm64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-if [ "$VERSION" = "latest" ]; then
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+# macOS: ensure pngpaste is available (used for clipboard image reading)
+if [ "$OS" = "darwin" ] && ! command -v pngpaste >/dev/null 2>&1; then
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew is required to install pngpaste. Install it from https://brew.sh" >&2
+    exit 1
+  fi
+  echo "Installing pngpaste..."
+  brew install pngpaste
 fi
 
+# Fetch latest release version from GitHub
+VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+
 if [ -z "$VERSION" ]; then
-  echo "Could not determine latest version. Check your internet connection."
+  echo "Could not determine latest version. Check https://github.com/$REPO/releases" >&2
   exit 1
 fi
 
-FILENAME="cpssh_${OS}_${ARCH}"
-URL="https://github.com/$REPO/releases/download/$VERSION/$FILENAME"
+URL="https://github.com/$REPO/releases/download/v${VERSION}/${BIN}_${OS}_${ARCH}.tar.gz"
 
-echo "Downloading cpssh $VERSION ($OS/$ARCH)..."
-curl -fsSL "$URL" -o /tmp/cpssh
-chmod +x /tmp/cpssh
+echo "Installing $BIN v$VERSION ($OS/$ARCH) to $INSTALL_DIR..."
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+curl -fsSL "$URL" | tar -xz -C "$TMP"
+
+if [ ! -f "$TMP/$BIN" ]; then
+  echo "Binary not found in archive" >&2
+  exit 1
+fi
 
 if [ -w "$INSTALL_DIR" ]; then
-  mv /tmp/cpssh "$INSTALL_DIR/cpssh"
+  install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
 else
-  sudo mv /tmp/cpssh "$INSTALL_DIR/cpssh"
-fi
-
-# Remove Gatekeeper quarantine on macOS
-if [ "$OS" = "darwin" ]; then
-  xattr -dr com.apple.quarantine "$INSTALL_DIR/cpssh" 2>/dev/null || true
+  sudo install -m 755 "$TMP/$BIN" "$INSTALL_DIR/$BIN"
 fi
 
 echo ""
-echo "Installed cpssh to $INSTALL_DIR/cpssh"
-echo ""
-echo "Run: cpssh setup"
+echo "$BIN installed. Run: $BIN setup"

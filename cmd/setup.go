@@ -25,7 +25,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	checkDeps()
 
 	fmt.Println("Welcome to cpssh setup!")
-	fmt.Println("This will configure clipboard-to-SSH image sync.\n")
+	fmt.Println("This will configure clipboard-to-SSH image sync.")
+	fmt.Println()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -256,6 +257,11 @@ func readKeyPath(reader *bufio.Reader) string {
 
 func checkDeps() {
 	missing := []string{}
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("pngpaste"); err != nil {
+			missing = append(missing, "pngpaste (install: brew install pngpaste)")
+		}
+	}
 	if runtime.GOOS == "linux" {
 		if os.Getenv("WAYLAND_DISPLAY") != "" {
 			if _, err := exec.LookPath("wl-paste"); err != nil {

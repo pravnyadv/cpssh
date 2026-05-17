@@ -1,11 +1,13 @@
+//go:build linux
+
 package clipboard
 
 import (
 	"crypto/sha256"
 	"log"
+	"os"
+	"os/exec"
 	"time"
-
-	"golang.design/x/clipboard"
 )
 
 type systemClipboard struct{}
@@ -17,15 +19,11 @@ func New() Clipboard {
 func (s *systemClipboard) WatchForImage(interval time.Duration) <-chan []byte {
 	ch := make(chan []byte, 1)
 	go func() {
-		if err := clipboard.Init(); err != nil {
-			log.Printf("clipboard init error: %v", err)
-			return
-		}
 		log.Printf("clipboard watching for images...")
 		var lastHash [32]byte
 		for {
 			time.Sleep(interval)
-			data := clipboard.Read(clipboard.FmtImage)
+			data := readClipboardImage()
 			if len(data) == 0 {
 				continue
 			}
@@ -39,4 +37,13 @@ func (s *systemClipboard) WatchForImage(interval time.Duration) <-chan []byte {
 		}
 	}()
 	return ch
+}
+
+func readClipboardImage() []byte {
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		data, _ := exec.Command("wl-paste", "--type", "image/png").Output()
+		return data
+	}
+	data, _ := exec.Command("xclip", "-selection", "clipboard", "-t", "image/png", "-o").Output()
+	return data
 }

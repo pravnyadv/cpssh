@@ -66,17 +66,12 @@ func Run() error {
 				log.Printf("image too large (%d KB), skipping", len(data)/1024)
 				continue
 			}
-			log.Printf("image captured (%d KB), syncing to %d server(s)", len(data)/1024, len(cfg.Servers))
-
-			remotePath := cpssync.SyncToAll(cfg, data)
-			if remotePath == "" {
+			if !hasActiveSSHSession() {
+				log.Printf("no active SSH session, skipping sync")
 				continue
 			}
-
-			// Keep PNG in clipboard (for Discord etc) + add text ref (for SSH terminal paste)
-			ref := fmt.Sprintf("[image:%s]", remotePath)
-			clipboard.WriteImageAndText(data, ref)
-			log.Printf("clipboard → %s", ref)
+			log.Printf("image captured (%d KB), syncing to %d server(s)", len(data)/1024, len(cfg.Servers))
+			cpssync.SyncToAll(cfg, data)
 		}
 	}
 }

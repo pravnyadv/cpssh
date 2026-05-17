@@ -147,8 +147,10 @@ func counterPath() (string, error) {
 	return filepath.Join(dir, "counter"), nil
 }
 
-// NextImageName returns the next short image filename (img1.png, img2.png, ...)
-// and persists the counter so it survives daemon restarts.
+const maxLocalImages = 10
+
+// NextImageName returns the next image filename cycling img1.png–img10.png.
+// Cycling caps local and remote storage at 10 files naturally.
 func NextImageName() string {
 	path, err := counterPath()
 	if err != nil {
@@ -160,7 +162,7 @@ func NextImageName() string {
 	if err == nil {
 		fmt.Sscanf(string(data), "%d", &n)
 	}
-	n++
+	n = (n % maxLocalImages) + 1
 
 	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d", n)), 0600)
 	return fmt.Sprintf("img%d.png", n)

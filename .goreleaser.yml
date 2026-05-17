@@ -1,0 +1,30 @@
+version: 2
+
+project_name: cpssh
+
+builds:
+  - main: .
+    binary: cpssh
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  footer: |
+    ## Install
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/pravnyadv/cpssh/main/install.sh | sh
+    ```
