@@ -180,23 +180,29 @@ func pickSSHKey(reader *bufio.Reader) string {
 		fmt.Printf("  [%d] %s\n", i+1, k)
 	}
 	fmt.Printf("  [0] Enter path manually\n")
-	fmt.Print("Pick a key [1]: ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
 
-	if input == "" {
-		return keys[0]
-	}
-	if input == "0" {
-		return readKeyPath(reader)
-	}
+	for {
+		fmt.Print("Pick a key [1]: ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
 
-	var idx int
-	fmt.Sscanf(input, "%d", &idx)
-	if idx >= 1 && idx <= len(keys) {
-		return keys[idx-1]
+		if input == "" {
+			return keys[0]
+		}
+
+		var idx int
+		if _, err := fmt.Sscan(input, &idx); err != nil || fmt.Sprintf("%d", idx) != input {
+			fmt.Println("Please enter a number.")
+			continue
+		}
+		if idx == 0 {
+			return readKeyPath(reader)
+		}
+		if idx >= 1 && idx <= len(keys) {
+			return keys[idx-1]
+		}
+		fmt.Printf("Please enter a number between 0 and %d.\n", len(keys))
 	}
-	return keys[0]
 }
 
 func prompt(msg string, defaultYes bool) bool {
