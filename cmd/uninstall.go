@@ -60,6 +60,11 @@ var uninstallCmd = &cobra.Command{
 			}
 		}
 
+		binaryPath, err := os.Executable()
+		if err == nil {
+			os.Remove(binaryPath)
+		}
+
 		fmt.Println("cpssh uninstalled.")
 		return nil
 	},
