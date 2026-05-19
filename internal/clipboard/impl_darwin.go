@@ -22,21 +22,20 @@ static int cpssh_has_png(void) {
 
 // Returns the post-write changeCount so the caller can advance its
 // "seen" marker without an extra round trip.
+// Image and text are written as separate NSPasteboardItems (image first) so
+// Universal Clipboard / iPhone WhatsApp sees the image as the primary item,
+// while SSH terminal paste still finds the text path in the second item.
 static long cpssh_write_image_and_text(const void* imgData, int imgLen, const char* text) {
     @autoreleasepool {
         NSPasteboard *pb = [NSPasteboard generalPasteboard];
-        NSMutableArray *types = [NSMutableArray array];
-        if (imgLen > 0) {
-            [types addObject:NSPasteboardTypePNG];
-        }
-        [types addObject:NSPasteboardTypeString];
-        [pb declareTypes:types owner:nil];
-        if (imgLen > 0) {
-            NSData *data = [NSData dataWithBytes:imgData length:imgLen];
-            [pb setData:data forType:NSPasteboardTypePNG];
-        }
-        NSString *str = [NSString stringWithUTF8String:text];
-        [pb setString:str forType:NSPasteboardTypeString];
+        NSPasteboardItem *imgItem = [[NSPasteboardItem alloc] init];
+        [imgItem setData:[NSData dataWithBytes:imgData length:imgLen]
+                 forType:NSPasteboardTypePNG];
+        NSPasteboardItem *textItem = [[NSPasteboardItem alloc] init];
+        [textItem setString:[NSString stringWithUTF8String:text]
+                    forType:NSPasteboardTypeString];
+        [pb clearContents];
+        [pb writeObjects:@[imgItem, textItem]];
         return (long)[pb changeCount];
     }
 }
