@@ -22,7 +22,7 @@ func SyncToAll(cfg *config.Config, imageData []byte) string {
 	mu.Lock()
 	defer mu.Unlock()
 
-	filename := config.NextImageName()
+	filename, prune := config.NextImageName()
 	data := maybeCompressBytes(cfg, imageData)
 
 	var (
@@ -34,7 +34,7 @@ func SyncToAll(cfg *config.Config, imageData []byte) string {
 		wg.Add(1)
 		go func(s config.Server) {
 			defer wg.Done()
-			if err := syncToServer(s, data, filename, cfg.Settings.KeepLastNFiles); err != nil {
+			if err := syncToServer(s, data, filename, cfg.Settings.KeepLastNFiles, prune); err != nil {
 				log.Printf("sync: [%s] error: %v", s.Host, err)
 			} else {
 				log.Printf("sync: [%s] ok → %s/%s", s.Host, s.SyncPath, filename)
@@ -125,8 +125,8 @@ func WarmUp(cfg *config.Config) {
 	}
 }
 
-func syncToServer(s config.Server, data []byte, filename string, keepN int) error {
-	remoteCmd := buildRemoteCmd(s.SyncPath, filename, keepN)
+func syncToServer(s config.Server, data []byte, filename string, keepN int, prune bool) error {
+	remoteCmd := buildRemoteCmd(s.SyncPath, filename, keepN, prune)
 	args := append(sshArgs(s), fmt.Sprintf("%s@%s", s.User, s.Host), remoteCmd)
 	run := func() error {
 		cmd := exec.Command("ssh", args...)
@@ -140,17 +140,18 @@ func syncToServer(s config.Server, data []byte, filename string, keepN int) erro
 	return nil
 }
 
-// buildRemoteCmd assembles the SSH-side shell command that writes the new
-// image, repoints the latest.png symlink, and prunes old files.
+// buildRemoteCmd assembles the SSH-side shell command that writes the image.
+// Pruning only runs on the last image of each cycle to avoid spawning ls/xargs
+// on every sync. The latest.png symlink is omitted — the specific path is
+// already on the clipboard so it adds overhead with no practical benefit.
 //
 // `xargs -r` is GNU's "skip when input is empty" flag; FreeBSD/macOS xargs
-// accept it as a documented no-op (it never invokes the utility on empty input
-// anyway). Without -r, GNU xargs would run `rm -f` with no operands, which
-// errors out and makes the whole && chain fail — silently breaking the
-// clipboard text reference on every fresh Linux server.
-func buildRemoteCmd(syncPath, filename string, keepN int) string {
-	return fmt.Sprintf(
-		`mkdir -p "%s" && cat > "%s/%s" && cd "%s" && ln -sf "%s" latest.png && ls -t *.png 2>/dev/null | tail -n +%d | xargs -r rm -f`,
-		syncPath, syncPath, filename, syncPath, filename, keepN+1,
-	)
+// accept it as a documented no-op. Without -r, GNU xargs would run `rm -f`
+// with no operands on a fresh server and fail the whole pipeline.
+func buildRemoteCmd(syncPath, filename string, keepN int, prune bool) string {
+	cmd := fmt.Sprintf(`cat > "%s/%s"`, syncPath, filename)
+	if prune {
+		cmd += fmt.Sprintf(` && cd "%s" && ls -t *.png 2>/dev/null | tail -n +%d | xargs -r rm -f`, syncPath, keepN+1)
+	}
+	return cmd
 }

@@ -91,8 +91,8 @@ Config lives at `~/.config/cpssh/config.json`. You can edit it directly:
   ],
   "settings": {
     "poll_interval_ms": 300,
-    "max_file_size_kb": 2048,
-    "compress_above_kb": 500,
+    "max_file_size_kb": 10240,
+    "compress_above_kb": 4096,
     "keep_last_n_files": 10,
     "paused": false
   }

@@ -22,20 +22,20 @@ static int cpssh_has_png(void) {
 
 // Returns the post-write changeCount so the caller can advance its
 // "seen" marker without an extra round trip.
-// Image and text are written as separate NSPasteboardItems (image first) so
-// Universal Clipboard / iPhone WhatsApp sees the image as the primary item,
-// while SSH terminal paste still finds the text path in the second item.
+// declareTypes: is used (not clearContents+writeObjects) because it produces a
+// single change-count increment — two increments cause the watcher to race and
+// re-detect our own write as a new user copy, triggering a sync loop.
+// PNG is declared first (preferred type) but written last: Universal Clipboard
+// appears to key off the most-recently-set data, so writing PNG last makes iOS
+// apps receive the image rather than the text path.
 static long cpssh_write_image_and_text(const void* imgData, int imgLen, const char* text) {
     @autoreleasepool {
         NSPasteboard *pb = [NSPasteboard generalPasteboard];
-        NSPasteboardItem *imgItem = [[NSPasteboardItem alloc] init];
-        [imgItem setData:[NSData dataWithBytes:imgData length:imgLen]
-                 forType:NSPasteboardTypePNG];
-        NSPasteboardItem *textItem = [[NSPasteboardItem alloc] init];
-        [textItem setString:[NSString stringWithUTF8String:text]
-                    forType:NSPasteboardTypeString];
-        [pb clearContents];
-        [pb writeObjects:@[imgItem, textItem]];
+        [pb declareTypes:@[NSPasteboardTypePNG, NSPasteboardTypeString] owner:nil];
+        NSString *str = [NSString stringWithUTF8String:text];
+        [pb setString:str forType:NSPasteboardTypeString];
+        NSData *data = [NSData dataWithBytes:imgData length:imgLen];
+        [pb setData:data forType:NSPasteboardTypePNG];
         return (long)[pb changeCount];
     }
 }

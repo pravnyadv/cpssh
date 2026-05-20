@@ -34,8 +34,8 @@ func DefaultConfig() *Config {
 		Servers: []Server{},
 		Settings: Settings{
 			PollIntervalMs:  300,
-			MaxFileSizeKB:   2048,
-			CompressAboveKB: 500,
+			MaxFileSizeKB:   10240,
+			CompressAboveKB: 4096,
 			KeepLastNFiles:  10,
 			Paused:          false,
 		},
@@ -166,12 +166,12 @@ func counterPath() (string, error) {
 
 const maxLocalImages = 10
 
-// NextImageName returns the next image filename cycling img1.png–img10.png.
-// Cycling caps local and remote storage at 10 files naturally.
-func NextImageName() string {
+// NextImageName returns the next image filename cycling img1.png–img10.png,
+// and whether this is the last image in the cycle (i.e. time to prune).
+func NextImageName() (string, bool) {
 	path, err := counterPath()
 	if err != nil {
-		return "img1.png"
+		return "img1.png", false
 	}
 
 	var n int
@@ -182,5 +182,5 @@ func NextImageName() string {
 	n = (n % maxLocalImages) + 1
 
 	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d", n)), 0600)
-	return fmt.Sprintf("img%d.png", n)
+	return fmt.Sprintf("img%d.png", n), n == maxLocalImages
 }

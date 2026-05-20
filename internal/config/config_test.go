@@ -92,8 +92,8 @@ func TestLoad_FillsZeroDefaults(t *testing.T) {
 	if cfg.Settings.PollIntervalMs != 300 {
 		t.Errorf("PollIntervalMs default: want 300, got %d", cfg.Settings.PollIntervalMs)
 	}
-	if cfg.Settings.MaxFileSizeKB != 2048 {
-		t.Errorf("MaxFileSizeKB default: want 2048, got %d", cfg.Settings.MaxFileSizeKB)
+	if cfg.Settings.MaxFileSizeKB != 10240 {
+		t.Errorf("MaxFileSizeKB default: want 10240, got %d", cfg.Settings.MaxFileSizeKB)
 	}
 	if cfg.Settings.KeepLastNFiles != 10 {
 		t.Errorf("KeepLastNFiles default: want 10, got %d", cfg.Settings.KeepLastNFiles)
@@ -154,7 +154,7 @@ func TestNextImageName_CyclesOneToTen(t *testing.T) {
 		"img1.png", "img2.png",
 	}
 	for i, w := range want {
-		got := NextImageName()
+		got, _ := NextImageName()
 		if got != w {
 			t.Errorf("call %d: want %s, got %s", i, w, got)
 		}
@@ -175,7 +175,7 @@ func TestNextImageName_RecoversFromCorruptCounter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := NextImageName(); got != "img1.png" {
+	if got, _ := NextImageName(); got != "img1.png" {
 		t.Errorf("after corrupt counter, want img1.png, got %s", got)
 	}
 }

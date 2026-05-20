@@ -36,7 +36,7 @@ func Run() error {
 	}
 	defer logFile.Close()
 	log.SetOutput(logFile)
-	log.SetFlags(log.LstdFlags)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	log.Println("daemon started")
 	go cpssync.WarmUp(cfg)
